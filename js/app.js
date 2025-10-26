@@ -13,6 +13,26 @@ if (typeof window !== 'undefined') {
   console.info('Recuerda restringir la API key de Google Maps a referrers HTTPS del dominio donde publiques este formulario.');
 }
 
+let isDomReady = false;
+let isGoogleReady = false;
+let googleFeaturesInitialized = false;
+
+function initializeGoogleFeatures() {
+  if (googleFeaturesInitialized) return;
+  if (!isDomReady || !isGoogleReady) return;
+  const success = setupAutocomplete();
+  if (success) {
+    googleFeaturesInitialized = true;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.initGoogleServices = function initGoogleServices() {
+    isGoogleReady = true;
+    initializeGoogleFeatures();
+  };
+}
+
 const form = document.getElementById('pedidoForm');
 const previewBtn = document.getElementById('previewBtn');
 const previewSection = document.getElementById('previewSection');
@@ -760,19 +780,19 @@ async function recalculatePricing() {
 }
 
 function setupAutocomplete() {
-  if (!window.google || !google.maps) {
-    showToast('Google Maps no pudo inicializarse.');
-    return;
+  if (!window.google || !google.maps || !google.maps.places?.PlaceAutocompleteElement) {
+    console.warn('La API de Google Maps todavía no está lista.');
+    return false;
   }
 
-  mapsService = new google.maps.DistanceMatrixService();
-  directionsService = new google.maps.DirectionsService();
-  geocoder = new google.maps.Geocoder();
+  mapsService = mapsService ?? new google.maps.DistanceMatrixService();
+  directionsService = directionsService ?? new google.maps.DirectionsService();
+  geocoder = geocoder ?? new google.maps.Geocoder();
 
   const biasCircle = new google.maps.Circle({ center: TANDIL_CENTER, radius: PLACE_BIAS_RADIUS_METERS });
   tandilBounds = biasCircle.getBounds();
 
-  if (routeMap) {
+  if (routeMap && !map) {
     map = new google.maps.Map(routeMap, {
       center: TANDIL_CENTER,
       zoom: 13,
@@ -780,29 +800,17 @@ function setupAutocomplete() {
     });
     directionsRenderer = new google.maps.DirectionsRenderer({ map });
     routeMap.setAttribute('aria-hidden', 'true');
+  } else if (routeMap && directionsRenderer) {
+    directionsRenderer.setMap(map);
   }
 
   const pickupInput = document.getElementById('direccionRecogida');
   const dropoffInput = document.getElementById('direccionEntrega');
+  const pickupAutocomplete = document.getElementById('pickupAutocomplete');
+  const dropoffAutocomplete = document.getElementById('dropoffAutocomplete');
 
-  const autocompleteOptions = {
-    componentRestrictions: { country: ['ar'] },
-    fields: ['geometry', 'formatted_address', 'name'],
-    bounds: tandilBounds,
-    strictBounds: false,
-    types: ['geocode'],
-  };
-
-  const pickupAutocomplete = new google.maps.places.Autocomplete(pickupInput, autocompleteOptions);
-  const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoffInput, autocompleteOptions);
-
-  if (tandilBounds) {
-    pickupAutocomplete.setBounds(tandilBounds);
-    dropoffAutocomplete.setBounds(tandilBounds);
-  }
-
-  pickupAutocomplete.addListener('place_changed', () => handlePlaceSelection('pickup', pickupAutocomplete, pickupInput));
-  dropoffAutocomplete.addListener('place_changed', () => handlePlaceSelection('dropoff', dropoffAutocomplete, dropoffInput));
+  configureAutocompleteElement('pickup', pickupAutocomplete, pickupInput);
+  configureAutocompleteElement('dropoff', dropoffAutocomplete, dropoffInput);
 
   pickupInput.addEventListener('input', () => {
     pickupPlaceData = null;
@@ -831,18 +839,71 @@ function setupAutocomplete() {
       geocodeAddress(dropoffInput.value, 'dropoff');
     }
   });
+
+  return true;
 }
 
-function handlePlaceSelection(target, autocomplete, input) {
-  const place = autocomplete.getPlace();
-  if (!place || !place.geometry) {
+function configureAutocompleteElement(target, element, input) {
+  if (!element || !input) return;
+
+  try {
+    element.setAttribute('types', 'address');
+    element.setAttribute('country', 'ar');
+    element.componentRestrictions = { country: ['ar'] };
+    element.types = ['address'];
+    if (element.fields) {
+      element.fields = ['formatted_address', 'geometry', 'name'];
+    }
+    if (tandilBounds) {
+      element.locationRestriction = tandilBounds;
+      element.locationBias = {
+        circle: {
+          center: new google.maps.LatLng(TANDIL_CENTER.lat, TANDIL_CENTER.lng),
+          radius: PLACE_BIAS_RADIUS_METERS,
+        },
+      };
+      element.setAttribute('locationbias', `circle:${TANDIL_CENTER.lat},${TANDIL_CENTER.lng}:${PLACE_BIAS_RADIUS_METERS}`);
+    }
+  } catch (error) {
+    console.warn('No se pudieron aplicar restricciones al autocomplete', error);
+  }
+
+  element.addEventListener('gmp-placeselect', async (event) => {
+    await handlePlaceSelection(target, input, event);
+  });
+
+  element.addEventListener('gmp-requesterror', (event) => {
+    console.error('Error en Place Autocomplete:', event.detail);
+    showToast('Hubo un problema consultando direcciones. Intentá de nuevo.');
+  });
+}
+
+async function handlePlaceSelection(target, input, event) {
+  const placeLike = event.detail?.place ?? event.detail;
+  if (!placeLike) {
     geocodeAddress(input.value, target);
     return;
   }
 
-  const formatted = place.formatted_address || ensureTandilContext(input.value);
+  let place = placeLike;
+
+  if ((!place.geometry || !place.geometry.location) && typeof place.fetchFields === 'function') {
+    try {
+      await place.fetchFields({ fields: ['formatted_address', 'geometry', 'name'] });
+    } catch (error) {
+      console.error('No se pudieron obtener detalles del lugar', error);
+    }
+  }
+
+  if (!place.geometry || !place.geometry.location) {
+    geocodeAddress(input.value, target);
+    return;
+  }
+
+  const formatted = place.formatted_address || ensureTandilContext(place.name || input.value);
   setPlaceData(target, formatted, place.geometry.location);
   input.value = formatted;
+  clearError(input);
   recalculatePricing();
 }
 
@@ -892,10 +953,10 @@ function geocodeAddress(rawAddress, target) {
 }
 
 function init() {
+  isDomReady = true;
   attachLiveValidation();
   initConditionalLogic();
   initPricingControls();
-  setupAutocomplete();
 
   if (addPickerItemBtn) {
     addPickerItemBtn.addEventListener('click', () => {
@@ -920,6 +981,8 @@ function init() {
       backdrop.hidden = true;
     }
   });
+
+  initializeGoogleFeatures();
 }
 
 document.addEventListener('DOMContentLoaded', init);

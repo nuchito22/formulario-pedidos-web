@@ -7,9 +7,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="css/style.css" />
     <!-- IMPORTANTE: restringí esta API key a referrers HTTPS del dominio donde publiques el formulario (por ejemplo https://tu-dominio.com/*) desde Google Cloud Console > Credentials. -->
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0xHDnsMn3WKRl6i_eyJ2W5gw5myKjT2M&libraries=places"></script>
+    <script
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0xHDnsMn3WKRl6i_eyJ2W5gw5myKjT2M&libraries=places&v=weekly&loading=async&callback=initGoogleServices"
+      async
+      defer
+    ></script>
     <!-- Firebase SDKs: actualiza firebaseConfig con las claves públicas de tu proyecto. -->
     <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
@@ -69,11 +74,23 @@
               <div class="field field--full">
                 <label for="direccionRecogida">Dirección de recogida *</label>
                 <input type="text" id="direccionRecogida" name="direccionRecogida" required placeholder="Ej: Av. Corrientes 1234, CABA" autocomplete="off" />
+                <gmp-place-autocomplete
+                  id="pickupAutocomplete"
+                  for="direccionRecogida"
+                  types="address"
+                  country="ar"
+                ></gmp-place-autocomplete>
                 <p class="helper-text" data-error-for="direccionRecogida"></p>
               </div>
               <div class="field field--full">
                 <label for="direccionEntrega">Dirección de entrega *</label>
                 <input type="text" id="direccionEntrega" name="direccionEntrega" required placeholder="Ej: Av. Santa Fe 2200, CABA" autocomplete="off" />
+                <gmp-place-autocomplete
+                  id="dropoffAutocomplete"
+                  for="direccionEntrega"
+                  types="address"
+                  country="ar"
+                ></gmp-place-autocomplete>
                 <p class="helper-text" data-error-for="direccionEntrega"></p>
               </div>
             </div>

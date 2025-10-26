@@ -371,6 +371,10 @@ select.error {
   transform: translate(-50%, -6px);
 }
 
+gmp-place-autocomplete {
+  display: none;
+}
+
 .map {
   width: 100%;
   min-height: 260px;
