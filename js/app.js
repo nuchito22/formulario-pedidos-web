@@ -23,13 +23,13 @@ const PHONE_PATTERN = /^(\+?\d[\d\s-]{6,16})$/;
 
 const urgencyMeta = {
   Normal: {
-    label: 'Entrega estándar (24 - 48 hs)',
+    label: 'Entrega estándar (20 - 30 min)',
   },
   Urgente: {
-    label: 'Entrega prioritaria (3 - 6 hs)',
+    label: 'Entrega prioritaria (15 - 20 min)',
   },
   'Muy urgente': {
-    label: 'Salida inmediata',
+    label: 'Salida inmediata (0 - 10 min)',
   },
 };
 
