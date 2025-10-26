@@ -13,6 +13,8 @@ const backdrop = document.getElementById('backdrop');
 const closeDialogBtn = document.getElementById('closeDialogBtn');
 const urgencySelect = document.getElementById('urgencia');
 const urgencyIndicator = document.querySelector('[data-urgency-indicator]');
+const pricingValue = document.getElementById('pricingValue');
+const pricingDetails = document.getElementById('pricingDetails');
 
 const firestoreAvailable = typeof db !== 'undefined' && Boolean(db);
 const serverTimestamp = firestoreAvailable ? firebase.firestore.FieldValue.serverTimestamp : undefined;
@@ -41,6 +43,22 @@ const requiredFields = [
   'urgencia',
   'descripcion',
 ];
+
+let mapsService = null;
+let directionsService = null;
+let pickupPlace = null;
+let dropoffPlace = null;
+let lastDistanceMeters = 0;
+
+const pricingParams = {
+  PRECIO_BASE: 2250,
+  DISTANCIA_BASE_METROS: 800,
+  COSTO_INICIAL_KM_EXTRA: 600,
+  DEGRADEZ_POR_KM: 20,
+  COSTO_MINIMO_KM_EXTRA: 350,
+  CARGO_EXTRA_PICKER: 750,
+  CARGO_POR_PARADA_ADICIONAL: 400,
+};
 
 function showToast(message) {
   toastMessage.textContent = message;
@@ -168,6 +186,10 @@ function extractFormData() {
     horarioRetiro: normalize(data.get('horarioRetiro')),
     horarioEntrega: normalize(data.get('horarioEntrega')),
     indicaciones: normalize(data.get('indicaciones'), 'Sin indicaciones'),
+    esPicker: data.get('esPicker') === 'on',
+    numeroParadas: Math.max(1, parseInt(data.get('numeroParadas') || '1', 10)),
+    costoEstimado: calculateFare(lastDistanceMeters || 0, data.get('esPicker') === 'on', Math.max(1, parseInt(data.get('numeroParadas') || '1', 10))),
+    distanciaMetros: lastDistanceMeters,
   };
 }
 
@@ -213,6 +235,9 @@ function formatWhatsAppMessage(order) {
     '',
     '💬 *Indicaciones*',
     order.indicaciones,
+    '',
+    '💰 *Costo estimado*',
+    `• Aproximado: ${formatCurrency(order.costoEstimado)} (${(order.distanciaMetros / 1000).toFixed(2)} km)`,
     '',
     `🗓️ *Solicitud registrada:* ${timestamp}`,
   ].join('\n');
@@ -279,6 +304,14 @@ async function handleSubmit(event) {
   updateUrgencyIndicator('');
   toggleConditionalFields('esGrande', false);
   toggleConditionalFields('usarHorarios', false);
+  toggleConditionalFields('esPicker', false);
+  pickupPlace = null;
+  dropoffPlace = null;
+  lastDistanceMeters = 0;
+  updatePricingDisplay({
+    amount: 0,
+    details: 'Selecciona direcciones para ver el cálculo.',
+  });
 }
 
 function attachLiveValidation() {
@@ -306,9 +339,212 @@ function initConditionalLogic() {
   toggleConditionalFields('usarHorarios', form.usarHorarios.checked);
 }
 
+function initPricingControls() {
+  form.esPicker.addEventListener('change', () => {
+    recalculatePricing();
+  });
+
+  form.numeroParadas.addEventListener('input', (event) => {
+    const value = Math.max(1, parseInt(event.target.value || '1', 10));
+    event.target.value = value;
+    recalculatePricing();
+  });
+}
+
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function calculateDistanceMatrix(origin, destination) {
+  return new Promise((resolve, reject) => {
+    if (!mapsService) {
+      reject(new Error('Servicio de Maps no disponible'));
+      return;
+    }
+
+    mapsService.getDistanceMatrix(
+      {
+        origins: [origin],
+        destinations: [destination],
+        travelMode: google.maps.TravelMode.DRIVING,
+        unitSystem: google.maps.UnitSystem.METRIC,
+      },
+      (response, status) => {
+        if (status !== google.maps.DistanceMatrixStatus.OK) {
+          reject(new Error(`Error DistanceMatrix: ${status}`));
+          return;
+        }
+
+        const element = response.rows?.[0]?.elements?.[0];
+        if (!element || element.status !== 'OK') {
+          reject(new Error('No se pudo calcular la distancia.'));
+          return;
+        }
+
+        resolve({
+          distance: element.distance.value,
+          duration: element.duration.value,
+          originAddress: response.originAddresses[0],
+          destinationAddress: response.destinationAddresses[0],
+        });
+      }
+    );
+  });
+}
+
+function calculateFare(distanceMeters, esPicker, numeroParadas) {
+  const {
+    PRECIO_BASE,
+    DISTANCIA_BASE_METROS,
+    COSTO_INICIAL_KM_EXTRA,
+    DEGRADEZ_POR_KM,
+    COSTO_MINIMO_KM_EXTRA,
+    CARGO_EXTRA_PICKER,
+    CARGO_POR_PARADA_ADICIONAL,
+  } = pricingParams;
+
+  if (distanceMeters <= 0) return 0;
+
+  let costoBaseDistancia = PRECIO_BASE;
+
+  if (distanceMeters > DISTANCIA_BASE_METROS) {
+    const distanciaAdicionalMetros = distanceMeters - DISTANCIA_BASE_METROS;
+    const distanciaAdicionalKm = distanciaAdicionalMetros / 1000;
+
+    let costoAdicionalAcumulado = 0;
+    let tarifaActual = COSTO_INICIAL_KM_EXTRA;
+    let kmRecorridos = 0;
+
+    const kmCompletos = Math.floor(distanciaAdicionalKm);
+    for (let i = 0; i < kmCompletos; i += 1) {
+      costoAdicionalAcumulado += tarifaActual;
+      tarifaActual = Math.max(COSTO_MINIMO_KM_EXTRA, tarifaActual - DEGRADEZ_POR_KM);
+      kmRecorridos += 1;
+    }
+
+    const fraccionKm = distanciaAdicionalKm - kmRecorridos;
+    costoAdicionalAcumulado += fraccionKm * tarifaActual;
+
+    costoBaseDistancia += costoAdicionalAcumulado;
+  }
+
+  let costoExtras = 0;
+
+  if (esPicker) {
+    costoExtras += CARGO_EXTRA_PICKER;
+  }
+
+  if (numeroParadas > 1) {
+    costoExtras += (numeroParadas - 1) * CARGO_POR_PARADA_ADICIONAL;
+  }
+
+  return Math.round(costoBaseDistancia + costoExtras);
+}
+
+function updatePricingDisplay({ amount, details }) {
+  pricingValue.textContent = formatCurrency(amount);
+  pricingDetails.textContent = details;
+}
+
+async function recalculatePricing() {
+  if (!pickupPlace || !dropoffPlace) {
+    updatePricingDisplay({
+      amount: 0,
+      details: 'Selecciona direcciones para ver el cálculo.',
+    });
+    lastDistanceMeters = 0;
+    return;
+  }
+
+  updatePricingDisplay({ amount: 0, details: 'Calculando distancia...' });
+  try {
+    const result = await calculateDistanceMatrix(pickupPlace, dropoffPlace);
+    lastDistanceMeters = result.distance;
+
+    const esPicker = form.esPicker.checked;
+    const numeroParadas = Math.max(1, parseInt(form.numeroParadas.value || '1', 10));
+    const fare = calculateFare(result.distance, esPicker, numeroParadas);
+
+    updatePricingDisplay({
+      amount: fare,
+      details: `Distancia estimada: ${(result.distance / 1000).toFixed(2)} km · ${Math.round(result.duration / 60)} min aprox.`,
+    });
+  } catch (error) {
+    console.error(error);
+    showToast('No pudimos calcular la distancia. Revísá las direcciones.');
+    updatePricingDisplay({
+      amount: 0,
+      details: 'No se pudo obtener una ruta válida. Revisá las direcciones.',
+    });
+  }
+}
+
+function setupAutocomplete() {
+  if (!window.google || !google.maps) {
+    showToast('Google Maps no pudo inicializarse.');
+    return;
+  }
+
+  mapsService = new google.maps.DistanceMatrixService();
+  directionsService = new google.maps.DirectionsService();
+
+  const pickupInput = document.getElementById('direccionRecogida');
+  const dropoffInput = document.getElementById('direccionEntrega');
+
+  const pickupAutocomplete = new google.maps.places.Autocomplete(pickupInput, {
+    componentRestrictions: { country: ['ar'] },
+    fields: ['geometry', 'formatted_address'],
+  });
+
+  const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoffInput, {
+    componentRestrictions: { country: ['ar'] },
+    fields: ['geometry', 'formatted_address'],
+  });
+
+  pickupAutocomplete.addListener('place_changed', () => {
+    const place = pickupAutocomplete.getPlace();
+    if (!place.geometry) {
+      showToast('Seleccioná una dirección válida de recogida.');
+      return;
+    }
+    pickupPlace = place.formatted_address;
+    recalculatePricing();
+  });
+
+  dropoffAutocomplete.addListener('place_changed', () => {
+    const place = dropoffAutocomplete.getPlace();
+    if (!place.geometry) {
+      showToast('Seleccioná una dirección válida de entrega.');
+      return;
+    }
+    dropoffPlace = place.formatted_address;
+    recalculatePricing();
+  });
+
+  pickupInput.addEventListener('blur', () => {
+    if (!pickupInput.value.trim()) {
+      pickupPlace = null;
+      recalculatePricing();
+    }
+  });
+
+  dropoffInput.addEventListener('blur', () => {
+    if (!dropoffInput.value.trim()) {
+      dropoffPlace = null;
+      recalculatePricing();
+    }
+  });
+}
+
 function init() {
   attachLiveValidation();
   initConditionalLogic();
+  initPricingControls();
+  setupAutocomplete();
 
   urgencySelect.addEventListener('change', (event) => updateUrgencyIndicator(event.target.value));
   updateUrgencyIndicator(urgencySelect.value);

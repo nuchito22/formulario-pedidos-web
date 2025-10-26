@@ -323,6 +323,33 @@ select.error {
   line-height: 1.5;
 }
 
+.pricing {
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(249, 250, 251, 0.95));
+  padding: clamp(16px, 3vw, 24px);
+  display: grid;
+  gap: 10px;
+}
+
+.pricing__value {
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  font-weight: 700;
+  color: var(--brand-primary-dark);
+}
+
+.pricing__details {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.pricing__hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: rgba(15, 23, 42, 0.55);
+}
+
 .toast {
   position: fixed;
   bottom: 24px;

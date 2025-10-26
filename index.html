@@ -3,11 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Solicitud de Mandado | Cadetería</title>
+    <title>QueSale! | Solicitud de Mandado</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="css/style.css" />
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0xHDnsMn3WKRl6i_eyJ2W5gw5myKjT2M&libraries=places"></script>
     <!-- Firebase SDKs: actualiza firebaseConfig con las claves públicas de tu proyecto. -->
     <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
@@ -31,10 +32,10 @@
     <main class="page">
       <section class="form-shell">
         <header class="form-header">
-          <div class="brand-icon" aria-hidden="true">📦</div>
+          <div class="brand-icon" aria-hidden="true">⚡</div>
           <div>
-            <h1>Solicitud de Mandado</h1>
-            <p>Completa los datos para coordinar tu pedido en minutos.</p>
+            <h1>QueSale! Mensajería Express</h1>
+            <p>Coordina tu envío en minutos y seguí todo el proceso.</p>
           </div>
         </header>
 
@@ -66,12 +67,12 @@
             <div class="grid">
               <div class="field field--full">
                 <label for="direccionRecogida">Dirección de recogida *</label>
-                <textarea id="direccionRecogida" name="direccionRecogida" required rows="3" placeholder="Calle, número, piso, barrio, referencias..."></textarea>
+                <input type="text" id="direccionRecogida" name="direccionRecogida" required placeholder="Ej: Av. Corrientes 1234, CABA" autocomplete="off" />
                 <p class="helper-text" data-error-for="direccionRecogida"></p>
               </div>
               <div class="field field--full">
                 <label for="direccionEntrega">Dirección de entrega *</label>
-                <textarea id="direccionEntrega" name="direccionEntrega" required rows="3" placeholder="Calle, número, piso, barrio, referencias..."></textarea>
+                <input type="text" id="direccionEntrega" name="direccionEntrega" required placeholder="Ej: Av. Santa Fe 2200, CABA" autocomplete="off" />
                 <p class="helper-text" data-error-for="direccionEntrega"></p>
               </div>
             </div>
@@ -118,6 +119,21 @@
               </div>
             </div>
 
+            <div class="grid">
+              <div class="field">
+                <label class="toggle">
+                  <input type="checkbox" id="esPicker" name="esPicker" />
+                  <span class="toggle-indicator" aria-hidden="true"></span>
+                  <span>¿Incluye compra en hipermercado (servicio picker)?</span>
+                </label>
+              </div>
+              <div class="field">
+                <label for="numeroParadas">Cantidad de entregas</label>
+                <input type="number" id="numeroParadas" name="numeroParadas" min="1" value="1" />
+                <p class="helper-text" data-error-for="numeroParadas"></p>
+              </div>
+            </div>
+
             <div class="field field--full">
               <label for="indicaciones">Indicaciones adicionales</label>
               <textarea id="indicaciones" name="indicaciones" rows="2" placeholder="Observaciones, cuidados, instrucciones para el cadete..."></textarea>
@@ -147,6 +163,18 @@
                 <input type="text" id="horarioEntrega" name="horarioEntrega" placeholder="Ej: antes de las 18:00" />
                 <p class="helper-text" data-error-for="horarioEntrega"></p>
               </div>
+            </div>
+          </section>
+
+          <section class="section" aria-labelledby="costo-title">
+            <div class="section-heading">
+              <h2 id="costo-title">Costo estimado</h2>
+              <span class="section-note">Calculamos el valor aproximado según distancia y servicios extra.</span>
+            </div>
+            <div class="pricing">
+              <div class="pricing__value" id="pricingValue">$0</div>
+              <div class="pricing__details" id="pricingDetails">Selecciona direcciones para ver el cálculo.</div>
+              <p class="pricing__hint">El valor es orientativo. Puede variar por tráfico, espera o ajustes manuales.</p>
             </div>
           </section>
 
