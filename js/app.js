@@ -3,6 +3,16 @@
 // Reemplaza este número por el destinatario real (formato internacional sin signos ni espacios).
 const WHATSAPP_NUMBER = '549XXXXXXXXXX';
 
+const TANDIL_CENTER = { lat: -37.3217, lng: -59.1333 };
+const PLACE_BIAS_RADIUS_METERS = 20000;
+const PICKER_ITEM_BLOCK_SIZE = 5;
+const PICKER_ITEM_SURCHARGE = 100;
+const PICKER_SURCHARGE_THRESHOLD = 10000;
+
+if (typeof window !== 'undefined') {
+  console.info('Recuerda restringir la API key de Google Maps a referrers HTTPS del dominio donde publiques este formulario.');
+}
+
 const form = document.getElementById('pedidoForm');
 const previewBtn = document.getElementById('previewBtn');
 const previewSection = document.getElementById('previewSection');
@@ -15,6 +25,10 @@ const urgencySelect = document.getElementById('urgencia');
 const urgencyIndicator = document.querySelector('[data-urgency-indicator]');
 const pricingValue = document.getElementById('pricingValue');
 const pricingDetails = document.getElementById('pricingDetails');
+const routeMap = document.getElementById('routeMap');
+const pickerItemsContainer = document.getElementById('pickerItemsContainer');
+const addPickerItemBtn = document.getElementById('addPickerItemBtn');
+const pickerListError = document.querySelector('[data-error-for="pickerList"]');
 
 const firestoreAvailable = typeof db !== 'undefined' && Boolean(db);
 const serverTimestamp = firestoreAvailable ? firebase.firestore.FieldValue.serverTimestamp : undefined;
@@ -46,9 +60,15 @@ const requiredFields = [
 
 let mapsService = null;
 let directionsService = null;
-let pickupPlace = null;
-let dropoffPlace = null;
+let directionsRenderer = null;
+let geocoder = null;
+let tandilBounds = null;
+let map = null;
+let pickupPlaceData = null;
+let dropoffPlaceData = null;
 let lastDistanceMeters = 0;
+
+const pickerItemsState = [];
 
 const pricingParams = {
   PRECIO_BASE: 2250,
@@ -91,10 +111,15 @@ function toggleConditionalFields(triggerName, isActive) {
     .forEach((group) => {
       group.hidden = !isActive;
       if (!isActive) {
+        if (triggerName === 'esPicker') {
+          resetPickerItems();
+        }
         group.querySelectorAll('input, textarea').forEach((field) => {
           field.value = '';
           clearError(field);
         });
+      } else if (triggerName === 'esPicker' && pickerItemsState.length === 0) {
+        addPickerItem();
       }
     });
 }
@@ -109,6 +134,108 @@ function setError(field, message) {
   field.classList.add('error');
   const helper = document.querySelector(`[data-error-for="${field.id}"]`);
   if (helper) helper.textContent = message;
+}
+
+function resetPickerItems() {
+  pickerItemsState.length = 0;
+  renderPickerItems();
+  if (pickerListError) {
+    pickerListError.textContent = '';
+  }
+}
+
+function renderPickerItems() {
+  if (!pickerItemsContainer) return;
+  pickerItemsContainer.innerHTML = '';
+
+  pickerItemsState.forEach((item, index) => {
+    const row = document.createElement('div');
+    row.className = 'picker-item-row';
+    row.dataset.index = String(index);
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Producto';
+    nameInput.value = item.name;
+    nameInput.required = true;
+    nameInput.addEventListener('input', (event) => {
+      pickerItemsState[index].name = event.target.value;
+      validatePickerItems();
+    });
+
+    const quantityInput = document.createElement('input');
+    quantityInput.type = 'number';
+    quantityInput.min = '1';
+    quantityInput.value = String(item.quantity);
+    quantityInput.addEventListener('input', (event) => {
+      const parsed = Math.max(1, parseInt(event.target.value || '1', 10));
+      pickerItemsState[index].quantity = parsed;
+      event.target.value = String(parsed);
+      validatePickerItems();
+      recalculatePricing();
+    });
+
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'picker-item-remove';
+    removeButton.innerHTML = '&times;';
+    removeButton.setAttribute('aria-label', 'Eliminar ítem');
+    removeButton.addEventListener('click', () => {
+      pickerItemsState.splice(index, 1);
+      renderPickerItems();
+      validatePickerItems();
+      recalculatePricing();
+    });
+
+    nameInput.addEventListener('blur', validatePickerItems);
+
+    row.append(nameInput, quantityInput, removeButton);
+    pickerItemsContainer.appendChild(row);
+  });
+
+  recalculatePricing();
+}
+
+function addPickerItem(initial = { name: '', quantity: 1 }) {
+  pickerItemsState.push({
+    name: initial.name ?? '',
+    quantity: Math.max(1, parseInt(initial.quantity ?? 1, 10)),
+  });
+  renderPickerItems();
+  validatePickerItems();
+}
+
+function getPickerItems() {
+  return pickerItemsState
+    .map((item) => ({
+      name: item.name.trim(),
+      quantity: Math.max(1, Number(item.quantity) || 1),
+    }))
+    .filter((item) => item.name.length > 0);
+}
+
+function validatePickerItems() {
+  if (!pickerListError) return true;
+
+  if (!form.esPicker.checked) {
+    pickerListError.textContent = '';
+    return true;
+  }
+
+  const items = getPickerItems();
+  if (!items.length) {
+    pickerListError.textContent = 'Añadí al menos un producto para el servicio picker.';
+    return false;
+  }
+
+  const hasInvalid = items.some((item) => item.name.length < 2 || item.quantity < 1);
+  if (hasInvalid) {
+    pickerListError.textContent = 'Completá nombre y cantidad (mínimo 1 unidad) en cada ítem.';
+    return false;
+  }
+
+  pickerListError.textContent = '';
+  return true;
 }
 
 function validateField(field) {
@@ -161,6 +288,10 @@ function validateForm() {
     if (!validateField(field)) valid = false;
   });
 
+  if (!validatePickerItems()) {
+    valid = false;
+  }
+
   return valid;
 }
 
@@ -172,12 +303,27 @@ function extractFormData() {
   const data = new FormData(form);
   const esGrande = data.get('esGrande') === 'on';
   const usarHorarios = data.get('usarHorarios') === 'on';
+  const esPicker = data.get('esPicker') === 'on';
+  const numeroParadas = Math.max(1, parseInt(data.get('numeroParadas') || '1', 10));
+  const pickerItems = esPicker ? getPickerItems() : [];
+
+  const direccionRecogidaInput = data.get('direccionRecogida')?.trim() ?? '';
+  const direccionEntregaInput = data.get('direccionEntrega')?.trim() ?? '';
+
+  const resolvedPickup = pickupPlaceData?.address || direccionRecogidaInput;
+  const resolvedDropoff = dropoffPlaceData?.address || direccionEntregaInput;
+
+  const fare = calculateFare(lastDistanceMeters || 0, {
+    esPicker,
+    numeroParadas,
+    pickerItems,
+  });
 
   return {
     nombre: data.get('nombre')?.trim() ?? '',
     telefono: data.get('telefono')?.trim() ?? '',
-    direccionRecogida: data.get('direccionRecogida')?.trim() ?? '',
-    direccionEntrega: data.get('direccionEntrega')?.trim() ?? '',
+    direccionRecogida: resolvedPickup,
+    direccionEntrega: resolvedDropoff,
     urgencia: data.get('urgencia') ?? '',
     descripcion: data.get('descripcion')?.trim() ?? '',
     esGrande,
@@ -186,10 +332,22 @@ function extractFormData() {
     horarioRetiro: normalize(data.get('horarioRetiro')),
     horarioEntrega: normalize(data.get('horarioEntrega')),
     indicaciones: normalize(data.get('indicaciones'), 'Sin indicaciones'),
-    esPicker: data.get('esPicker') === 'on',
-    numeroParadas: Math.max(1, parseInt(data.get('numeroParadas') || '1', 10)),
-    costoEstimado: calculateFare(lastDistanceMeters || 0, data.get('esPicker') === 'on', Math.max(1, parseInt(data.get('numeroParadas') || '1', 10))),
+    esPicker,
+    numeroParadas,
+    pickerItems,
+    costoEstimado: fare.total,
+    costoEstimadoDetalle: fare,
     distanciaMetros: lastDistanceMeters,
+    resolvedLocations: {
+      pickup: pickupPlaceData?.location ? {
+        lat: pickupPlaceData.location.lat(),
+        lng: pickupPlaceData.location.lng(),
+      } : null,
+      dropoff: dropoffPlaceData?.location ? {
+        lat: dropoffPlaceData.location.lat(),
+        lng: dropoffPlaceData.location.lng(),
+      } : null,
+    },
   };
 }
 
@@ -204,6 +362,26 @@ function formatWhatsAppMessage(order) {
   const horarios = order.usarHorarios
     ? `🕘 Retiro: ${order.horarioRetiro}\n🕔 Entrega: ${order.horarioEntrega}`
     : 'Sin horario definido';
+
+  const pickerLines = [];
+  if (order.esPicker) {
+    pickerLines.push('🛒 *Servicio picker*');
+    if (order.pickerItems?.length) {
+      pickerLines.push(
+        order.pickerItems
+          .map((item) => `• ${item.quantity}x ${item.name}`)
+          .join('\n')
+      );
+    } else {
+      pickerLines.push('• Productos: sin detallar');
+    }
+
+    if (order.costoEstimadoDetalle?.pickerItemsSurcharge) {
+      pickerLines.push(`• Cargo extra ítems: ${formatCurrency(order.costoEstimadoDetalle.pickerItemsSurcharge)}`);
+    } else if (order.costoEstimadoDetalle?.waivedItemSurcharge) {
+      pickerLines.push('• Extra ítems bonificado por superar $10.000');
+    }
+  }
 
   const timestamp = new Date().toLocaleString('es-AR', {
     weekday: 'long',
@@ -236,11 +414,19 @@ function formatWhatsAppMessage(order) {
     '💬 *Indicaciones*',
     order.indicaciones,
     '',
+    ...pickerLines,
+    pickerLines.length ? '' : null,
     '💰 *Costo estimado*',
-    `• Aproximado: ${formatCurrency(order.costoEstimado)} (${(order.distanciaMetros / 1000).toFixed(2)} km)`,
-    '',
+  `• Aproximado: ${formatCurrency(order.costoEstimado)}${order.distanciaMetros ? ` (${(order.distanciaMetros / 1000).toFixed(2)} km)` : ''}`,
+  order.costoEstimadoDetalle?.pickerBase ? `• Servicio picker: ${formatCurrency(order.costoEstimadoDetalle.pickerBase)}` : null,
+  order.costoEstimadoDetalle?.pickerItemsSurcharge
+    ? `• Extra ítems (${order.costoEstimadoDetalle.pickerItemCount}): ${formatCurrency(order.costoEstimadoDetalle.pickerItemsSurcharge)}`
+    : null,
+  order.costoEstimadoDetalle?.waivedItemSurcharge ? '• Extra ítems bonificado por total > $10.000' : null,
+  order.costoEstimadoDetalle?.stopsExtra ? `• Paradas adicionales: ${formatCurrency(order.costoEstimadoDetalle.stopsExtra)}` : null,
+  '',
     `🗓️ *Solicitud registrada:* ${timestamp}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function buildWhatsAppLink(message) {
@@ -305,9 +491,10 @@ async function handleSubmit(event) {
   toggleConditionalFields('esGrande', false);
   toggleConditionalFields('usarHorarios', false);
   toggleConditionalFields('esPicker', false);
-  pickupPlace = null;
-  dropoffPlace = null;
+  pickupPlaceData = null;
+  dropoffPlaceData = null;
   lastDistanceMeters = 0;
+  clearRoute();
   updatePricingDisplay({
     amount: 0,
     details: 'Selecciona direcciones para ver el cálculo.',
@@ -335,15 +522,18 @@ function initConditionalLogic() {
     toggleConditionalFields('usarHorarios', event.target.checked);
   });
 
-  toggleConditionalFields('esGrande', form.esGrande.checked);
-  toggleConditionalFields('usarHorarios', form.usarHorarios.checked);
-}
-
-function initPricingControls() {
-  form.esPicker.addEventListener('change', () => {
+  form.esPicker.addEventListener('change', (event) => {
+    toggleConditionalFields('esPicker', event.target.checked);
+    validatePickerItems();
     recalculatePricing();
   });
 
+  toggleConditionalFields('esGrande', form.esGrande.checked);
+  toggleConditionalFields('usarHorarios', form.usarHorarios.checked);
+  toggleConditionalFields('esPicker', form.esPicker.checked);
+}
+
+function initPricingControls() {
   form.numeroParadas.addEventListener('input', (event) => {
     const value = Math.max(1, parseInt(event.target.value || '1', 10));
     event.target.value = value;
@@ -396,7 +586,41 @@ function calculateDistanceMatrix(origin, destination) {
   });
 }
 
-function calculateFare(distanceMeters, esPicker, numeroParadas) {
+function clearRoute() {
+  if (directionsRenderer) {
+    directionsRenderer.set('directions', null);
+  }
+  if (routeMap) {
+    routeMap.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function drawRoute() {
+  if (!directionsService || !directionsRenderer || !pickupPlaceData || !dropoffPlaceData) {
+    return;
+  }
+
+  directionsService.route(
+    {
+      origin: pickupPlaceData.location,
+      destination: dropoffPlaceData.location,
+      travelMode: google.maps.TravelMode.DRIVING,
+    },
+    (response, status) => {
+      if (status === 'OK') {
+        directionsRenderer.setDirections(response);
+        if (routeMap) {
+          routeMap.removeAttribute('aria-hidden');
+        }
+      } else {
+        console.error('Error al generar la ruta:', status);
+        clearRoute();
+      }
+    }
+  );
+}
+
+function calculateFare(distanceMeters, { esPicker, numeroParadas, pickerItems }) {
   const {
     PRECIO_BASE,
     DISTANCIA_BASE_METROS,
@@ -407,9 +631,20 @@ function calculateFare(distanceMeters, esPicker, numeroParadas) {
     CARGO_POR_PARADA_ADICIONAL,
   } = pricingParams;
 
-  if (distanceMeters <= 0) return 0;
+  if (distanceMeters <= 0) {
+    return {
+      total: 0,
+      base: PRECIO_BASE,
+      distanceExtra: 0,
+      pickerBase: 0,
+      pickerItemsSurcharge: 0,
+      stopsExtra: 0,
+      pickerItemCount: 0,
+      waivedItemSurcharge: false,
+    };
+  }
 
-  let costoBaseDistancia = PRECIO_BASE;
+  let distanceCost = PRECIO_BASE;
 
   if (distanceMeters > DISTANCIA_BASE_METROS) {
     const distanciaAdicionalMetros = distanceMeters - DISTANCIA_BASE_METROS;
@@ -429,20 +664,41 @@ function calculateFare(distanceMeters, esPicker, numeroParadas) {
     const fraccionKm = distanciaAdicionalKm - kmRecorridos;
     costoAdicionalAcumulado += fraccionKm * tarifaActual;
 
-    costoBaseDistancia += costoAdicionalAcumulado;
+    distanceCost += costoAdicionalAcumulado;
   }
 
-  let costoExtras = 0;
+  const pickerBase = esPicker ? CARGO_EXTRA_PICKER : 0;
+  const stopsExtra = numeroParadas > 1 ? (numeroParadas - 1) * CARGO_POR_PARADA_ADICIONAL : 0;
 
-  if (esPicker) {
-    costoExtras += CARGO_EXTRA_PICKER;
+  const pickerItemCount = Array.isArray(pickerItems)
+    ? pickerItems.reduce((acc, item) => acc + Math.max(1, Number(item.quantity) || 1), 0)
+    : 0;
+
+  const subtotalSinItems = distanceCost + pickerBase + stopsExtra;
+
+  let pickerItemsSurcharge = 0;
+  let waivedItemSurcharge = false;
+
+  if (esPicker && pickerItemCount > 0) {
+    if (subtotalSinItems > PICKER_SURCHARGE_THRESHOLD) {
+      waivedItemSurcharge = true;
+    } else {
+      pickerItemsSurcharge = Math.ceil(pickerItemCount / PICKER_ITEM_BLOCK_SIZE) * PICKER_ITEM_SURCHARGE;
+    }
   }
 
-  if (numeroParadas > 1) {
-    costoExtras += (numeroParadas - 1) * CARGO_POR_PARADA_ADICIONAL;
-  }
+  const total = Math.round(subtotalSinItems + pickerItemsSurcharge);
 
-  return Math.round(costoBaseDistancia + costoExtras);
+  return {
+    total,
+    base: PRECIO_BASE,
+    distanceExtra: distanceCost - PRECIO_BASE,
+    pickerBase,
+    pickerItemsSurcharge,
+    stopsExtra,
+    pickerItemCount,
+    waivedItemSurcharge,
+  };
 }
 
 function updatePricingDisplay({ amount, details }) {
@@ -451,28 +707,47 @@ function updatePricingDisplay({ amount, details }) {
 }
 
 async function recalculatePricing() {
-  if (!pickupPlace || !dropoffPlace) {
+  if (!pickupPlaceData || !dropoffPlaceData) {
     updatePricingDisplay({
       amount: 0,
       details: 'Selecciona direcciones para ver el cálculo.',
     });
     lastDistanceMeters = 0;
+    clearRoute();
     return;
   }
 
   updatePricingDisplay({ amount: 0, details: 'Calculando distancia...' });
   try {
-    const result = await calculateDistanceMatrix(pickupPlace, dropoffPlace);
+    const result = await calculateDistanceMatrix(pickupPlaceData.location, dropoffPlaceData.location);
     lastDistanceMeters = result.distance;
 
     const esPicker = form.esPicker.checked;
     const numeroParadas = Math.max(1, parseInt(form.numeroParadas.value || '1', 10));
-    const fare = calculateFare(result.distance, esPicker, numeroParadas);
+    const pickerItems = esPicker ? getPickerItems() : [];
+    const fare = calculateFare(result.distance, { esPicker, numeroParadas, pickerItems });
+
+    const detailPieces = [`Distancia estimada: ${(result.distance / 1000).toFixed(2)} km · ${Math.round(result.duration / 60)} min aprox.`];
+
+    if (fare.pickerBase > 0) {
+      detailPieces.push(`Servicio picker: ${formatCurrency(fare.pickerBase)}`);
+    }
+    if (fare.pickerItemsSurcharge > 0) {
+      detailPieces.push(`Extra ítems (${fare.pickerItemCount}): ${formatCurrency(fare.pickerItemsSurcharge)}`);
+    }
+    if (fare.waivedItemSurcharge) {
+      detailPieces.push('Extra ítems bonificado por superar $10.000.');
+    }
+    if (fare.stopsExtra > 0) {
+      detailPieces.push(`Paradas adicionales: ${formatCurrency(fare.stopsExtra)}`);
+    }
 
     updatePricingDisplay({
-      amount: fare,
-      details: `Distancia estimada: ${(result.distance / 1000).toFixed(2)} km · ${Math.round(result.duration / 60)} min aprox.`,
+      amount: fare.total,
+      details: detailPieces.join(' · '),
     });
+
+    drawRoute();
   } catch (error) {
     console.error(error);
     showToast('No pudimos calcular la distancia. Revísá las direcciones.');
@@ -480,6 +755,7 @@ async function recalculatePricing() {
       amount: 0,
       details: 'No se pudo obtener una ruta válida. Revisá las direcciones.',
     });
+    clearRoute();
   }
 }
 
@@ -491,51 +767,126 @@ function setupAutocomplete() {
 
   mapsService = new google.maps.DistanceMatrixService();
   directionsService = new google.maps.DirectionsService();
+  geocoder = new google.maps.Geocoder();
+
+  const biasCircle = new google.maps.Circle({ center: TANDIL_CENTER, radius: PLACE_BIAS_RADIUS_METERS });
+  tandilBounds = biasCircle.getBounds();
+
+  if (routeMap) {
+    map = new google.maps.Map(routeMap, {
+      center: TANDIL_CENTER,
+      zoom: 13,
+      disableDefaultUI: true,
+    });
+    directionsRenderer = new google.maps.DirectionsRenderer({ map });
+    routeMap.setAttribute('aria-hidden', 'true');
+  }
 
   const pickupInput = document.getElementById('direccionRecogida');
   const dropoffInput = document.getElementById('direccionEntrega');
 
-  const pickupAutocomplete = new google.maps.places.Autocomplete(pickupInput, {
+  const autocompleteOptions = {
     componentRestrictions: { country: ['ar'] },
-    fields: ['geometry', 'formatted_address'],
+    fields: ['geometry', 'formatted_address', 'name'],
+    bounds: tandilBounds,
+    strictBounds: false,
+    types: ['geocode'],
+  };
+
+  const pickupAutocomplete = new google.maps.places.Autocomplete(pickupInput, autocompleteOptions);
+  const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoffInput, autocompleteOptions);
+
+  if (tandilBounds) {
+    pickupAutocomplete.setBounds(tandilBounds);
+    dropoffAutocomplete.setBounds(tandilBounds);
+  }
+
+  pickupAutocomplete.addListener('place_changed', () => handlePlaceSelection('pickup', pickupAutocomplete, pickupInput));
+  dropoffAutocomplete.addListener('place_changed', () => handlePlaceSelection('dropoff', dropoffAutocomplete, dropoffInput));
+
+  pickupInput.addEventListener('input', () => {
+    pickupPlaceData = null;
   });
 
-  const dropoffAutocomplete = new google.maps.places.Autocomplete(dropoffInput, {
-    componentRestrictions: { country: ['ar'] },
-    fields: ['geometry', 'formatted_address'],
-  });
-
-  pickupAutocomplete.addListener('place_changed', () => {
-    const place = pickupAutocomplete.getPlace();
-    if (!place.geometry) {
-      showToast('Seleccioná una dirección válida de recogida.');
-      return;
-    }
-    pickupPlace = place.formatted_address;
-    recalculatePricing();
-  });
-
-  dropoffAutocomplete.addListener('place_changed', () => {
-    const place = dropoffAutocomplete.getPlace();
-    if (!place.geometry) {
-      showToast('Seleccioná una dirección válida de entrega.');
-      return;
-    }
-    dropoffPlace = place.formatted_address;
-    recalculatePricing();
+  dropoffInput.addEventListener('input', () => {
+    dropoffPlaceData = null;
   });
 
   pickupInput.addEventListener('blur', () => {
     if (!pickupInput.value.trim()) {
-      pickupPlace = null;
+      pickupPlaceData = null;
+      clearRoute();
       recalculatePricing();
+    } else if (!pickupPlaceData) {
+      geocodeAddress(pickupInput.value, 'pickup');
     }
   });
 
   dropoffInput.addEventListener('blur', () => {
     if (!dropoffInput.value.trim()) {
-      dropoffPlace = null;
+      dropoffPlaceData = null;
+      clearRoute();
       recalculatePricing();
+    } else if (!dropoffPlaceData) {
+      geocodeAddress(dropoffInput.value, 'dropoff');
+    }
+  });
+}
+
+function handlePlaceSelection(target, autocomplete, input) {
+  const place = autocomplete.getPlace();
+  if (!place || !place.geometry) {
+    geocodeAddress(input.value, target);
+    return;
+  }
+
+  const formatted = place.formatted_address || ensureTandilContext(input.value);
+  setPlaceData(target, formatted, place.geometry.location);
+  input.value = formatted;
+  recalculatePricing();
+}
+
+function ensureTandilContext(address) {
+  const trimmed = (address || '').trim();
+  if (!trimmed) return '';
+  return trimmed.toLowerCase().includes('tandil')
+    ? trimmed
+    : `${trimmed}, Tandil, Buenos Aires, Argentina`;
+}
+
+function setPlaceData(target, address, location) {
+  const data = {
+    address,
+    location,
+  };
+
+  if (target === 'pickup') {
+    pickupPlaceData = data;
+    form.direccionRecogida.value = address;
+  } else {
+    dropoffPlaceData = data;
+    form.direccionEntrega.value = address;
+  }
+}
+
+function geocodeAddress(rawAddress, target) {
+  if (!geocoder) return;
+
+  const request = {
+    address: ensureTandilContext(rawAddress),
+    componentRestrictions: { country: 'AR' },
+  };
+
+  if (tandilBounds) {
+    request.bounds = tandilBounds;
+  }
+
+  geocoder.geocode(request, (results, status) => {
+    if (status === 'OK' && results[0]) {
+      setPlaceData(target, results[0].formatted_address, results[0].geometry.location);
+      recalculatePricing();
+    } else {
+      showToast('No pudimos ubicar esa dirección en Tandil. Verificá la calle y número.');
     }
   });
 }
@@ -545,6 +896,13 @@ function init() {
   initConditionalLogic();
   initPricingControls();
   setupAutocomplete();
+
+  if (addPickerItemBtn) {
+    addPickerItemBtn.addEventListener('click', () => {
+      addPickerItem();
+      addPickerItemBtn.focus();
+    });
+  }
 
   urgencySelect.addEventListener('change', (event) => updateUrgencyIndicator(event.target.value));
   updateUrgencyIndicator(urgencySelect.value);

@@ -8,7 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="css/style.css" />
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0xHDnsMn3WKRl6i_eyJ2W5gw5myKjT2M&libraries=places"></script>
+    <!-- IMPORTANTE: restringí esta API key a referrers HTTPS del dominio donde publiques el formulario (por ejemplo https://tu-dominio.com/*) desde Google Cloud Console > Credentials. -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0xHDnsMn3WKRl6i_eyJ2W5gw5myKjT2M&libraries=places"></script>
     <!-- Firebase SDKs: actualiza firebaseConfig con las claves públicas de tu proyecto. -->
     <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
@@ -134,6 +135,17 @@
               </div>
             </div>
 
+            <div class="field conditional" data-conditional="esPicker">
+              <label>Lista de productos a comprar</label>
+              <div class="picker-items" id="pickerItemsContainer"></div>
+              <button type="button" class="btn btn--ghost picker-items__add" id="addPickerItemBtn">
+                <span aria-hidden="true">➕</span>
+                Agregar ítem
+              </button>
+              <p class="helper-text" data-error-for="pickerList"></p>
+              <p class="picker-items__hint">Cada bloque de 5 productos suma $100 adicionales al servicio picker, salvo que el costo estimado supere $10.000.</p>
+            </div>
+
             <div class="field field--full">
               <label for="indicaciones">Indicaciones adicionales</label>
               <textarea id="indicaciones" name="indicaciones" rows="2" placeholder="Observaciones, cuidados, instrucciones para el cadete..."></textarea>
@@ -176,6 +188,7 @@
               <div class="pricing__details" id="pricingDetails">Selecciona direcciones para ver el cálculo.</div>
               <p class="pricing__hint">El valor es orientativo. Puede variar por tráfico, espera o ajustes manuales.</p>
             </div>
+            <div class="map" id="routeMap" aria-hidden="true"></div>
           </section>
 
           <div class="form-actions">
