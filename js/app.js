@@ -1,4 +1,4 @@
-'use strict';
+"use strict";
 
 // Reemplaza este número por el destinatario real (formato internacional sin signos ni espacios).
 const WHATSAPP_NUMBER = '549XXXXXXXXXX';
@@ -13,6 +13,9 @@ const backdrop = document.getElementById('backdrop');
 const closeDialogBtn = document.getElementById('closeDialogBtn');
 const urgencySelect = document.getElementById('urgencia');
 const urgencyIndicator = document.querySelector('[data-urgency-indicator]');
+
+const firestoreAvailable = typeof db !== 'undefined' && Boolean(db);
+const serverTimestamp = firestoreAvailable ? firebase.firestore.FieldValue.serverTimestamp : undefined;
 
 const conditionalGroups = Array.from(document.querySelectorAll('[data-conditional]'));
 
@@ -243,7 +246,24 @@ function handlePreview() {
   previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function handleSubmit(event) {
+async function persistOrder(order) {
+  if (!firestoreAvailable) {
+    return false;
+  }
+  try {
+    await db.collection('pedidos').add({
+      ...order,
+      createdAt: serverTimestamp ? serverTimestamp() : new Date().toISOString(),
+    });
+    return true;
+  } catch (error) {
+    console.error('Error al guardar pedido en Firestore', error);
+    showToast('No pudimos guardar el pedido en la base, pero seguimos con WhatsApp.');
+    return false;
+  }
+}
+
+async function handleSubmit(event) {
   event.preventDefault();
   if (!validateForm()) {
     showToast('No pudimos preparar el pedido: falta información obligatoria.');
@@ -252,6 +272,7 @@ function handleSubmit(event) {
 
   const order = extractFormData();
   const message = renderPreview(order);
+  await persistOrder(order);
   openWhatsApp(message);
   showToast('Pedido listo. Completa el envío desde WhatsApp.');
   form.reset();

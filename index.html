@@ -8,6 +8,23 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="css/style.css" />
+    <!-- Firebase SDKs: actualiza firebaseConfig con las claves públicas de tu proyecto. -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+    <script>
+      // Sustituye los valores por los de tu consola Firebase. Estos datos son públicos.
+      const firebaseConfig = {
+        apiKey: "AIzaSyebAG0jL_X4VMA3oM3bpjUwmnnaXRko",
+        authDomain: "formulario-pedidos-web.firebaseapp.com",
+        projectId: "formulario-pedidos-web",
+        storageBucket: "formulario-pedidos-web.appspot.com",
+        messagingSenderId: "969449471479",
+        appId: "1:969449471479:web:18887e6e91bb9b1eab30fc"
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+    </script>
     <script defer src="js/app.js"></script>
   </head>
   <body>
