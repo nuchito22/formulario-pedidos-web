@@ -851,14 +851,6 @@ function setupAutocomplete() {
 function configureAutocompleteElement(target, element, input) {
   if (!element || !input) return;
 
-  element.setAttribute('for', input.id);
-  element.setAttribute('types', 'address');
-  element.setAttribute('countries', 'ar');
-  if (tandilBounds) {
-    const biasValue = `circle:${TANDIL_CENTER.lat},${TANDIL_CENTER.lng}:${PLACE_BIAS_RADIUS_METERS}`;
-    element.setAttribute('location-bias', biasValue);
-  }
-
   element.addEventListener('gmp-placeautocomplete-select', async (event) => {
     await handlePlaceSelection(target, input, event);
   });
@@ -926,7 +918,6 @@ function geocodeAddress(rawAddress, target) {
 
   const request = {
     address: ensureTandilContext(rawAddress),
-    componentRestrictions: { country: 'AR' },
   };
 
   if (tandilBounds) {
