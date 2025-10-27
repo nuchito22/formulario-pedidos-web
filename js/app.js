@@ -846,21 +846,11 @@ function setupAutocomplete() {
 function configureAutocompleteElement(target, element, input) {
   if (!element || !input) return;
 
-  try {
-    element.setAttribute('types', 'address');
-    element.setAttribute('countries', 'ar');
-    if (tandilBounds) {
-      element.setAttribute('location-bias', `circle:${TANDIL_CENTER.lat},${TANDIL_CENTER.lng}:${PLACE_BIAS_RADIUS_METERS}`);
-    }
-  } catch (error) {
-    console.warn('No se pudieron aplicar restricciones al autocomplete', error);
-  }
-
-  element.addEventListener('gmp-placeselect', async (event) => {
+  element.addEventListener('gmp-placeautocomplete-select', async (event) => {
     await handlePlaceSelection(target, input, event);
   });
 
-  element.addEventListener('gmp-requesterror', (event) => {
+  element.addEventListener('gmp-placeautocomplete-error', (event) => {
     console.error('Error en Place Autocomplete:', event.detail);
     showToast('Hubo un problema consultando direcciones. Intentá de nuevo.');
   });
