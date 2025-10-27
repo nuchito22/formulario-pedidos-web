@@ -851,18 +851,12 @@ function setupAutocomplete() {
 function configureAutocompleteElement(target, element, input) {
   if (!element || !input) return;
 
-  try {
-    element.for = input.id;
-    if (tandilBounds) {
-      element.locationBias = {
-        circle: {
-          center: { lat: TANDIL_CENTER.lat, lng: TANDIL_CENTER.lng },
-          radius: PLACE_BIAS_RADIUS_METERS,
-        },
-      };
-    }
-  } catch (error) {
-    console.warn('No pudimos configurar el sesgo de autocomplete:', error);
+  element.setAttribute('for', input.id);
+  element.setAttribute('types', 'address');
+  element.setAttribute('countries', 'ar');
+  if (tandilBounds) {
+    const biasValue = `circle:${TANDIL_CENTER.lat},${TANDIL_CENTER.lng}:${PLACE_BIAS_RADIUS_METERS}`;
+    element.setAttribute('location-bias', biasValue);
   }
 
   element.addEventListener('gmp-placeautocomplete-select', async (event) => {
