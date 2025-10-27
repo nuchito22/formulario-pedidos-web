@@ -488,8 +488,13 @@ async function persistOrder(order) {
     });
     return true;
   } catch (error) {
-    console.error('Error al guardar pedido en Firestore', error);
-    showToast('No pudimos guardar el pedido en la base, pero seguimos con WhatsApp.');
+    if (error?.code === 'permission-denied') {
+      console.warn('Firestore rechazó la escritura. Revisa las reglas de seguridad del proyecto o desactiva la integración temporalmente.');
+      showToast('No pudimos guardar el pedido en la base por permisos. Seguimos con WhatsApp.');
+    } else {
+      console.error('Error al guardar pedido en Firestore', error);
+      showToast('No pudimos guardar el pedido en la base, pero seguimos con WhatsApp.');
+    }
     return false;
   }
 }
@@ -845,6 +850,20 @@ function setupAutocomplete() {
 
 function configureAutocompleteElement(target, element, input) {
   if (!element || !input) return;
+
+  try {
+    element.for = input.id;
+    if (tandilBounds) {
+      element.locationBias = {
+        circle: {
+          center: { lat: TANDIL_CENTER.lat, lng: TANDIL_CENTER.lng },
+          radius: PLACE_BIAS_RADIUS_METERS,
+        },
+      };
+    }
+  } catch (error) {
+    console.warn('No pudimos configurar el sesgo de autocomplete:', error);
+  }
 
   element.addEventListener('gmp-placeautocomplete-select', async (event) => {
     await handlePlaceSelection(target, input, event);
