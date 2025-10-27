@@ -1,7 +1,7 @@
 "use strict";
 
 // Reemplaza este número por el destinatario real (formato internacional sin signos ni espacios).
-const WHATSAPP_NUMBER = '5491494205880';
+const WHATSAPP_NUMBER = '5492494205880';
 
 const TANDIL_CENTER = { lat: -37.3217, lng: -59.1333 };
 const PLACE_BIAS_RADIUS_METERS = 20000;
