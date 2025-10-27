@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QueSale! | Solicitud de Mandado</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="css/style.css" />
+    <!-- IMPORTANTE: restringí esta API key a referrers HTTPS del dominio donde publiques el formulario (por ejemplo https://tu-dominio.com/*) desde Google Cloud Console > Credentials. -->
+    <script
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB0xHDnsMn3WKRl6i_eyJ2W5gw5myKjT2M&libraries=places&v=weekly&loading=async&callback=initGoogleServices"
+      async
+      defer
+    ></script>
+    <!-- Firebase SDKs: actualiza firebaseConfig con las claves públicas de tu proyecto. -->
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+    <script>
+      // Sustituye los valores por los de tu consola Firebase. Estos datos son públicos.
+      const firebaseConfig = {
+        apiKey: "AIzaSyebAG0jL_X4VMA3oM3bpjUwmnnaXRko",
+        authDomain: "formulario-pedidos-web.firebaseapp.com",
+        projectId: "formulario-pedidos-web",
+        storageBucket: "formulario-pedidos-web.appspot.com",
+        messagingSenderId: "969449471479",
+        appId: "1:969449471479:web:18887e6e91bb9b1eab30fc"
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      const db = firebase.firestore();
+    </script>
+    <script defer src="js/app.js"></script>
+  </head>
+  <body>
+    <main class="page">
+      <section class="form-shell">
+        <header class="form-header">
+          <div class="brand-icon" aria-hidden="true">⚡</div>
+          <div>
+            <h1>QueSale! Mensajería Express</h1>
+            <p>Coordina tu envío en minutos y seguí todo el proceso.</p>
+          </div>
+        </header>
+
+        <form id="pedidoForm" novalidate>
+          <section class="section" aria-labelledby="datos-personales-title">
+            <div class="section-heading">
+              <h2 id="datos-personales-title">Datos del cliente</h2>
+              <span class="section-note">Información imprescindible para contactarte.</span>
+            </div>
+            <div class="grid">
+              <div class="field">
+                <label for="nombre">Nombre completo *</label>
+                <input type="text" id="nombre" name="nombre" autocomplete="name" required maxlength="80" placeholder="Ej: Ana López" />
+                <p class="helper-text" data-error-for="nombre"></p>
+              </div>
+              <div class="field">
+                <label for="telefono">Teléfono de contacto *</label>
+                <input type="tel" id="telefono" name="telefono" inputmode="tel" autocomplete="tel" required placeholder="Ej: 11 1234 5678" />
+                <p class="helper-text" data-error-for="telefono"></p>
+              </div>
+            </div>
+          </section>
+
+          <section class="section" aria-labelledby="direcciones-title">
+            <div class="section-heading">
+              <h2 id="direcciones-title">Direcciones</h2>
+              <span class="section-note">Detalla los puntos de retiro y entrega.</span>
+            </div>
+            <div class="grid">
+              <div class="field field--full">
+                <label for="direccionRecogida">Dirección de recogida *</label>
+                <input type="text" id="direccionRecogida" name="direccionRecogida" required placeholder="Ej: Av. Corrientes 1234, CABA" autocomplete="off" />
+                <gmp-place-autocomplete
+                  id="pickupAutocomplete"
+                  for="direccionRecogida"
+                  types="address"
+                  country="ar"
+                ></gmp-place-autocomplete>
+                <p class="helper-text" data-error-for="direccionRecogida"></p>
+              </div>
+              <div class="field field--full">
+                <label for="direccionEntrega">Dirección de entrega *</label>
+                <input type="text" id="direccionEntrega" name="direccionEntrega" required placeholder="Ej: Av. Santa Fe 2200, CABA" autocomplete="off" />
+                <gmp-place-autocomplete
+                  id="dropoffAutocomplete"
+                  for="direccionEntrega"
+                  types="address"
+                  country="ar"
+                ></gmp-place-autocomplete>
+                <p class="helper-text" data-error-for="direccionEntrega"></p>
+              </div>
+            </div>
+          </section>
+
+          <section class="section" aria-labelledby="detalles-paquete-title">
+            <div class="section-heading">
+              <h2 id="detalles-paquete-title">Detalles del paquete</h2>
+              <span class="section-note">Ayúdanos a dimensionar el envío.</span>
+            </div>
+            <div class="grid">
+              <div class="field">
+                <label for="urgencia">Urgencia *</label>
+                <div class="urgency-wrapper">
+                  <select id="urgencia" name="urgencia" required>
+                    <option value="">Seleccionar urgencia</option>
+                    <option value="Normal">Normal</option>
+                    <option value="Urgente">Urgente</option>
+                    <option value="Muy urgente">Muy urgente</option>
+                  </select>
+                  <span class="urgency-indicator" data-urgency-indicator>Selecciona una opción</span>
+                </div>
+                <p class="helper-text" data-error-for="urgencia"></p>
+              </div>
+              <div class="field">
+                <label for="descripcion">Descripción del paquete *</label>
+                <input type="text" id="descripcion" name="descripcion" required maxlength="120" placeholder="Ej: Documentos, caja mediana, paquete frágil" />
+                <p class="helper-text" data-error-for="descripcion"></p>
+              </div>
+            </div>
+
+            <div class="grid">
+              <div class="field">
+                <label class="toggle">
+                  <input type="checkbox" id="esGrande" name="esGrande" />
+                  <span class="toggle-indicator" aria-hidden="true"></span>
+                  <span>¿El paquete es voluminoso o supera 5 kg?</span>
+                </label>
+              </div>
+              <div class="field conditional" data-conditional="esGrande">
+                <label for="detallesTamano">Detalles del tamaño</label>
+                <input type="text" id="detallesTamano" name="detallesTamano" placeholder="Ej: 60x40 cm, requiere baúl amplio" />
+                <p class="helper-text" data-error-for="detallesTamano"></p>
+              </div>
+            </div>
+
+            <div class="grid">
+              <div class="field">
+                <label class="toggle">
+                  <input type="checkbox" id="esPicker" name="esPicker" />
+                  <span class="toggle-indicator" aria-hidden="true"></span>
+                  <span>¿Incluye compra en hipermercado (servicio picker)?</span>
+                </label>
+              </div>
+              <div class="field">
+                <label for="numeroParadas">Cantidad de entregas</label>
+                <input type="number" id="numeroParadas" name="numeroParadas" min="1" value="1" />
+                <p class="helper-text" data-error-for="numeroParadas"></p>
+              </div>
+            </div>
+
+            <div class="field conditional" data-conditional="esPicker">
+              <label>Lista de productos a comprar</label>
+              <div class="picker-items" id="pickerItemsContainer"></div>
+              <button type="button" class="btn btn--ghost picker-items__add" id="addPickerItemBtn">
+                <span aria-hidden="true">➕</span>
+                Agregar ítem
+              </button>
+              <p class="helper-text" data-error-for="pickerList"></p>
+              <p class="picker-items__hint">Cada bloque de 5 productos suma $100 adicionales al servicio picker, salvo que el costo estimado supere $10.000.</p>
+            </div>
+
+            <div class="field field--full">
+              <label for="indicaciones">Indicaciones adicionales</label>
+              <textarea id="indicaciones" name="indicaciones" rows="2" placeholder="Observaciones, cuidados, instrucciones para el cadete..."></textarea>
+            </div>
+          </section>
+
+          <section class="section" aria-labelledby="horarios-title">
+            <div class="section-heading">
+              <h2 id="horarios-title">Horarios</h2>
+              <span class="section-note">Agrega ventanas horarias si son importantes.</span>
+            </div>
+            <div class="field">
+              <label class="toggle">
+                <input type="checkbox" id="usarHorarios" name="usarHorarios" />
+                <span class="toggle-indicator" aria-hidden="true"></span>
+                <span>Necesito especificar horarios</span>
+              </label>
+            </div>
+            <div class="grid conditional" data-conditional="usarHorarios">
+              <div class="field">
+                <label for="horarioRetiro">Horario preferido de retiro</label>
+                <input type="text" id="horarioRetiro" name="horarioRetiro" placeholder="Ej: entre 10:00 y 12:00" />
+                <p class="helper-text" data-error-for="horarioRetiro"></p>
+              </div>
+              <div class="field">
+                <label for="horarioEntrega">Horario preferido de entrega</label>
+                <input type="text" id="horarioEntrega" name="horarioEntrega" placeholder="Ej: antes de las 18:00" />
+                <p class="helper-text" data-error-for="horarioEntrega"></p>
+              </div>
+            </div>
+          </section>
+
+          <section class="section" aria-labelledby="costo-title">
+            <div class="section-heading">
+              <h2 id="costo-title">Costo estimado</h2>
+              <span class="section-note">Calculamos el valor aproximado según distancia y servicios extra.</span>
+            </div>
+            <div class="pricing">
+              <div class="pricing__value" id="pricingValue">$0</div>
+              <div class="pricing__details" id="pricingDetails">Selecciona direcciones para ver el cálculo.</div>
+              <p class="pricing__hint">El valor es orientativo. Puede variar por tráfico, espera o ajustes manuales.</p>
+            </div>
+            <div class="map" id="routeMap" aria-hidden="true"></div>
+          </section>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn--ghost" id="previewBtn">
+              <span aria-hidden="true">👁️</span>
+              Previsualizar
+            </button>
+            <button type="submit" class="btn btn--primary" id="submitBtn">
+              <span aria-hidden="true">📲</span>
+              Enviar pedido por WhatsApp
+            </button>
+          </div>
+        </form>
+
+        <section class="preview" id="previewSection" hidden aria-live="polite">
+          <header>
+            <h2>Previsualización del mensaje</h2>
+            <p>Revisa el contenido que se abrirá en WhatsApp.</p>
+          </header>
+          <pre id="previewMessage" class="preview__message"></pre>
+        </section>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="assertive" aria-atomic="true" hidden>
+      <span id="toastMessage"></span>
+    </div>
+
+    <div class="backdrop" id="backdrop" hidden>
+      <div class="dialog" role="alertdialog" aria-modal="true">
+        <div class="dialog__icon" aria-hidden="true">✅</div>
+        <h2>Pedido preparado</h2>
+        <p>Se abrió WhatsApp con tu mensaje listo para enviar.</p>
+        <button type="button" class="btn btn--primary" id="closeDialogBtn">Entendido</button>
+      </div>
+    </div>
+  </body>
+</html>
