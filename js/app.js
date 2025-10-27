@@ -848,21 +848,9 @@ function configureAutocompleteElement(target, element, input) {
 
   try {
     element.setAttribute('types', 'address');
-    element.setAttribute('country', 'ar');
-    element.componentRestrictions = { country: ['ar'] };
-    element.types = ['address'];
-    if (element.fields) {
-      element.fields = ['formatted_address', 'geometry', 'name'];
-    }
+    element.setAttribute('countries', 'ar');
     if (tandilBounds) {
-      element.locationRestriction = tandilBounds;
-      element.locationBias = {
-        circle: {
-          center: new google.maps.LatLng(TANDIL_CENTER.lat, TANDIL_CENTER.lng),
-          radius: PLACE_BIAS_RADIUS_METERS,
-        },
-      };
-      element.setAttribute('locationbias', `circle:${TANDIL_CENTER.lat},${TANDIL_CENTER.lng}:${PLACE_BIAS_RADIUS_METERS}`);
+      element.setAttribute('location-bias', `circle:${TANDIL_CENTER.lat},${TANDIL_CENTER.lng}:${PLACE_BIAS_RADIUS_METERS}`);
     }
   } catch (error) {
     console.warn('No se pudieron aplicar restricciones al autocomplete', error);
